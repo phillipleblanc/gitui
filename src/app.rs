@@ -144,6 +144,7 @@ impl App {
         self.commit_modal.content.clear();
         self.files = get_file_list(repo);
         self.expanded_dirs.clear();
+        self.right_pane_content.clear();
         Ok(())
     }
 
