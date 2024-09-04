@@ -59,24 +59,8 @@ impl App {
     }
 
     pub fn handle_event(&mut self, event: Event, repo: &Repository) -> AppResult<()> {
-        match event {
-            Event::Key(key) => self.handle_key_event(key, repo)?,
-            Event::Mouse(mouse) => self.handle_mouse_event(mouse)?,
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppResult<()> {
-        match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                self.focused_pane = match mouse.column {
-                    0..=30 => FocusedPane::FileList,
-                    31..=65 => FocusedPane::Details,
-                    _ => FocusedPane::Debug,
-                };
-            }
-            _ => {}
+        if let Event::Key(key) = event {
+            self.handle_key_event(key, repo)?
         }
         Ok(())
     }
@@ -94,10 +78,14 @@ impl App {
             }
         } else {
             match (self.focused_pane, key.code) {
-                (FocusedPane::FileList, KeyCode::Up) => self.move_selection_up(),
-                (FocusedPane::FileList, KeyCode::Down) => self.move_selection_down(),
-                (FocusedPane::Details, KeyCode::Up) => self.scroll_details_up(),
-                (FocusedPane::Details, KeyCode::Down) => self.scroll_details_down(),
+                (FocusedPane::FileList, KeyCode::Up) => self.move_selection_up(1),
+                (FocusedPane::FileList, KeyCode::Down) => self.move_selection_down(1),
+                (FocusedPane::FileList, KeyCode::PageUp) => self.move_selection_up(10),
+                (FocusedPane::FileList, KeyCode::PageDown) => self.move_selection_down(10),
+                (FocusedPane::Details, KeyCode::Up) => self.scroll_details_up(1),
+                (FocusedPane::Details, KeyCode::PageUp) => self.scroll_details_up(10),
+                (FocusedPane::Details, KeyCode::Down) => self.scroll_details_down(1),
+                (FocusedPane::Details, KeyCode::PageDown) => self.scroll_details_down(10),
                 (_, KeyCode::Left) => self.set_focused_pane(FocusedPane::FileList),
                 (_, KeyCode::Right) => self.set_focused_pane(FocusedPane::Details),
                 (_, KeyCode::Enter) => self.toggle_directory(repo)?,
@@ -111,25 +99,25 @@ impl App {
         Ok(())
     }
 
-    fn scroll_details_up(&mut self) {
+    fn scroll_details_up(&mut self, step: usize) {
         if self.details_scroll > 0 {
-            self.details_scroll -= 1;
+            self.details_scroll -= step;
         }
     }
 
-    fn scroll_details_down(&mut self) {
-        self.details_scroll += 1;
+    fn scroll_details_down(&mut self, step: usize) {
+        self.details_scroll += step;
     }
 
-    fn move_selection_up(&mut self) {
+    fn move_selection_up(&mut self, step: usize) {
         if !self.files.is_empty() && self.selected_index > 0 {
-            self.selected_index -= 1;
+            self.selected_index -= step;
         }
     }
 
-    fn move_selection_down(&mut self) {
+    fn move_selection_down(&mut self, step: usize) {
         if !self.files.is_empty() && self.selected_index < self.files.len() - 1 {
-            self.selected_index += 1;
+            self.selected_index += step;
         }
     }
 
@@ -194,6 +182,10 @@ impl App {
     pub fn debug_log(&mut self, message: &str) {
         self.debug_content.push_str(message);
         self.debug_content.push('\n');
+    }
+
+    pub fn refresh_file_list(&mut self, repo: &Repository) {
+        self.files = get_file_list(repo);
     }
 
     fn toggle_debug_mode(&mut self) {

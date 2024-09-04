@@ -35,6 +35,8 @@ fn main() -> AppResult<()> {
 
     // Main loop
     loop {
+        // Refresh file list
+        app.refresh_file_list(&repo);
         terminal.draw(|f| draw(f, &mut app))?;
 
         // Check for debug messages
