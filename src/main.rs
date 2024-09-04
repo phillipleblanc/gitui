@@ -42,17 +42,20 @@ fn main() -> AppResult<()> {
             app.debug_log(&debug_message);
         }
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(KeyEvent {
-                code: KeyCode::Char('q'),
-                ..
-            }) = event::read()?
-            {
-                if !app.commit_modal.is_visible && !app.help_modal.is_visible {
-                    break;
+        if event::poll(Duration::from_millis(16))? {
+            if let Ok(event) = event::read() {
+                match event {
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('q'),
+                        ..
+                    }) => {
+                        if !app.commit_modal.is_visible && !app.help_modal.is_visible {
+                            break;
+                        }
+                    }
+                    _ => app.handle_event(event, &repo)?,
                 }
             }
-            app.handle_event(event::read()?, &repo)?;
         }
     }
 
