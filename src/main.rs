@@ -1,42 +1,22 @@
+mod app;
+mod file_system;
+mod git_ops;
+mod ui;
+
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use git2::{IndexAddOption, Repository, Status};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
-    Terminal,
-};
-use std::{
-    io,
-    path::{Path, PathBuf},
-};
+use git2::Repository;
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
+use std::io;
 
-struct FileEntry {
-    name: String,
-    status: Status,
-    is_dir: bool,
-}
+use crate::app::{App, AppResult};
+use crate::ui::draw;
 
-struct Modal {
-    content: String,
-    is_visible: bool,
-}
-
-struct App {
-    files: Vec<FileEntry>,
-    selected_index: usize,
-    right_pane_content: String,
-    commit_modal: Modal,
-    help_modal: Modal,
-}
-
-fn main() -> Result<(), anyhow::Error> {
+fn main() -> AppResult<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -46,123 +26,17 @@ fn main() -> Result<(), anyhow::Error> {
 
     // Create app state
     let repo = Repository::open(".").expect("Failed to open repository");
-    let files = get_file_list(&repo);
-    let mut app = App {
-        files,
-        selected_index: 0,
-        right_pane_content: String::new(),
-        commit_modal: Modal {
-            content: String::new(),
-            is_visible: false,
-        },
-        help_modal: Modal {
-            content: get_help_content(),
-            is_visible: false,
-        },
-    };
+    let mut app = App::new(&repo);
 
     // Main loop
     loop {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
-                .split(f.size());
+        terminal.draw(|f| draw(f, &mut app))?;
 
-            let items: Vec<ListItem> = app
-                .files
-                .iter()
-                .enumerate()
-                .map(|(index, file)| {
-                    let color = match file.status {
-                        Status::WT_NEW => Color::Green,
-                        Status::WT_MODIFIED => Color::Yellow,
-                        Status::WT_DELETED => Color::Red,
-                        _ => Color::White,
-                    };
-                    let prefix = if file.is_dir { "📁 " } else { "📄 " };
-                    let content = prefix.to_string() + &file.name;
-                    let style = if index == app.selected_index {
-                        Style::default().fg(color).add_modifier(Modifier::REVERSED)
-                    } else {
-                        Style::default().fg(color)
-                    };
-                    ListItem::new(Spans::from(vec![Span::styled(content, style)]))
-                })
-                .collect();
-
-            let file_list = List::new(items)
-                .block(Block::default().title("Files").borders(Borders::ALL))
-                .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-
-            f.render_stateful_widget(
-                file_list,
-                chunks[0],
-                &mut ListState::default().with_selected(Some(app.selected_index)),
-            );
-
-            let right_pane = Paragraph::new(app.right_pane_content.as_str())
-                .block(Block::default().title("Details").borders(Borders::ALL))
-                .wrap(ratatui::widgets::Wrap { trim: true });
-            f.render_widget(right_pane, chunks[1]);
-
-            if app.commit_modal.is_visible {
-                render_modal(f, "Commit Message", &app.commit_modal.content, 60, 20);
-            } else if app.help_modal.is_visible {
-                render_modal(f, "Help", &app.help_modal.content, 60, 40);
+        if let Event::Key(key) = event::read()? {
+            if key.code == KeyCode::Char('q') && !app.is_modal_visible() {
+                break;
             }
-        })?;
-
-        if app.commit_modal.is_visible {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Esc => app.commit_modal.is_visible = false,
-                    KeyCode::Enter => {
-                        create_commit(&repo, &app.commit_modal.content)?;
-                        app.commit_modal.is_visible = false;
-                        app.commit_modal.content.clear();
-                        app.files = get_file_list(&repo);
-                    }
-                    KeyCode::Char(c) => app.commit_modal.content.push(c),
-                    KeyCode::Backspace => {
-                        app.commit_modal.content.pop();
-                    }
-                    _ => {}
-                }
-            }
-        } else if app.help_modal.is_visible {
-            if let Event::Key(key) = event::read()? {
-                if key.code == KeyCode::Esc || key.code == KeyCode::Char('?') {
-                    app.help_modal.is_visible = false;
-                }
-            }
-        } else {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Up => {
-                        if app.selected_index > 0 {
-                            app.selected_index -= 1;
-                        }
-                    }
-                    KeyCode::Down => {
-                        if app.selected_index < app.files.len() - 1 {
-                            app.selected_index += 1;
-                        }
-                    }
-                    KeyCode::Enter => {
-                        update_right_pane(&repo, &mut app)?;
-                    }
-                    KeyCode::Char('c') => {
-                        stage_all_modified(&repo)?;
-                        app.commit_modal.is_visible = true;
-                    }
-                    KeyCode::Char('?') => {
-                        app.help_modal.is_visible = true;
-                    }
-                    _ => {}
-                }
-            }
+            app.handle_key_event(key, &repo)?;
         }
     }
 
@@ -176,212 +50,4 @@ fn main() -> Result<(), anyhow::Error> {
     terminal.show_cursor()?;
 
     Ok(())
-}
-
-fn update_right_pane(repo: &Repository, app: &mut App) -> Result<(), git2::Error> {
-    let selected_file = &app.files[app.selected_index];
-    let path = PathBuf::from(&selected_file.name);
-
-    if selected_file.is_dir {
-        app.right_pane_content = format!("Directory: {}", selected_file.name);
-    } else {
-        let mut diff_content = String::new();
-
-        // Check for unstaged changes
-        let mut opts = git2::DiffOptions::new();
-        opts.pathspec(selected_file.name.clone());
-        opts.include_untracked(true);
-
-        let diff = repo.diff_index_to_workdir(None, Some(&mut opts))?;
-        diff_content.push_str("Unstaged changes:\n");
-        append_diff(&mut diff_content, &diff, &path)?;
-
-        // Check for staged changes
-        let head = repo.head()?;
-        let tree = head.peel_to_tree()?;
-        let diff = repo.diff_tree_to_index(Some(&tree), None, Some(&mut opts))?;
-        diff_content.push_str("\nStaged changes:\n");
-        append_diff(&mut diff_content, &diff, &path)?;
-
-        app.right_pane_content = if diff_content.trim() == "Unstaged changes:\nStaged changes:" {
-            format!("No changes detected for file: {}", selected_file.name)
-        } else {
-            diff_content
-        };
-    }
-
-    Ok(())
-}
-
-fn append_diff(content: &mut String, diff: &git2::Diff, path: &Path) -> Result<(), git2::Error> {
-    let mut has_changes = false;
-    diff.print(git2::DiffFormat::Patch, |delta, _, line| {
-        if delta.new_file().path() == Some(path) || delta.old_file().path() == Some(path) {
-            has_changes = true;
-            use git2::DiffLineType;
-            match line.origin_value() {
-                DiffLineType::Addition => content.push('+'),
-                DiffLineType::Deletion => content.push('-'),
-                DiffLineType::AddEOFNL => content.push_str("+\n"),
-                DiffLineType::DeleteEOFNL => content.push_str("-\n"),
-                DiffLineType::Context => content.push(' '),
-                _ => {}
-            }
-            content.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
-        }
-        true
-    })?;
-    if !has_changes {
-        content.push_str("No changes\n");
-    }
-    Ok(())
-}
-
-fn get_file_list(repo: &Repository) -> Vec<FileEntry> {
-    let mut files = Vec::new();
-    let statuses = repo.statuses(None).expect("Couldn't get repository status");
-
-    for entry in statuses.iter() {
-        let path = PathBuf::from(entry.path().unwrap_or_default());
-        let name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .into_owned();
-        let is_dir = path.is_dir();
-        let status = entry.status();
-
-        files.push(FileEntry {
-            name,
-            status,
-            is_dir,
-        });
-    }
-
-    // Add untracked files and directories
-    for entry in std::fs::read_dir(".").expect("Failed to read directory") {
-        if let Ok(entry) = entry {
-            let path = entry.path();
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            let is_dir = path.is_dir();
-
-            if !files.iter().any(|f| f.name == name) {
-                let status = if repo
-                    .status_file(&path)
-                    .map(|s| s.is_wt_new())
-                    .unwrap_or(false)
-                {
-                    Status::WT_NEW
-                } else {
-                    Status::CURRENT
-                };
-
-                files.push(FileEntry {
-                    name,
-                    status,
-                    is_dir,
-                });
-            }
-        }
-    }
-
-    files.sort_by(|a, b| {
-        if a.is_dir == b.is_dir {
-            a.name.cmp(&b.name)
-        } else {
-            b.is_dir.cmp(&a.is_dir)
-        }
-    });
-
-    files
-}
-
-fn stage_all_modified(repo: &Repository) -> Result<(), git2::Error> {
-    let mut index = repo.index()?;
-    let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true);
-    let statuses = repo.statuses(Some(&mut opts))?;
-
-    for entry in statuses.iter() {
-        let path = entry.path().unwrap_or_default();
-        if entry.status() != git2::Status::CURRENT {
-            index.add_path(Path::new(path))?;
-        }
-    }
-
-    index.write()?;
-    Ok(())
-}
-
-fn create_commit(repo: &Repository, message: &str) -> Result<(), git2::Error> {
-    let mut index = repo.index()?;
-    let oid = index.write_tree()?;
-    let signature = repo.signature()?;
-    let parent_commit = repo.head()?.peel_to_commit()?;
-    let tree = repo.find_tree(oid)?;
-    repo.commit(
-        Some("HEAD"),
-        &signature,
-        &signature,
-        message,
-        &tree,
-        &[&parent_commit],
-    )?;
-    Ok(())
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
-}
-
-fn render_modal(
-    f: &mut ratatui::Frame<CrosstermBackend<std::io::Stdout>>,
-    title: &str,
-    content: &str,
-    percent_x: u16,
-    percent_y: u16,
-) {
-    let modal_area = centered_rect(percent_x, percent_y, f.size());
-    let modal = Paragraph::new(content)
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .wrap(ratatui::widgets::Wrap { trim: true });
-    f.render_widget(Clear, modal_area);
-    f.render_widget(modal, modal_area);
-}
-
-fn get_help_content() -> String {
-    "
-    Key Bindings:
-    ↑/↓: Navigate file list
-    Enter: View file details/diff
-    c: Stage all modified files and open commit dialog
-    ?: Toggle this help menu
-    q: Quit the application
-
-    In commit dialog:
-    Enter: Confirm commit
-    Esc: Cancel commit
-    "
-    .trim()
-    .to_string()
 }
