@@ -1,0 +1,10 @@
+[package]
+name = "gitui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.22.0"
+crossterm = "0.26.1"
+git2 = "0.17"
+walkdir = "2.3"
