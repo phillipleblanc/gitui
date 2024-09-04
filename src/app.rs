@@ -17,7 +17,7 @@ pub struct App {
     pub expanded_dirs: HashMap<String, bool>,
     pub selected_index: usize,
     pub right_pane_content: String,
-    pub debug_content: String, // Add this line
+    pub debug_content: String,
     pub commit_modal: Modal,
     pub help_modal: Modal,
     pub root_dir: String,
@@ -98,6 +98,8 @@ impl App {
                 (FocusedPane::FileList, KeyCode::Down) => self.move_selection_down(),
                 (FocusedPane::Details, KeyCode::Up) => self.scroll_details_up(),
                 (FocusedPane::Details, KeyCode::Down) => self.scroll_details_down(),
+                (_, KeyCode::Left) => self.set_focused_pane(FocusedPane::FileList),
+                (_, KeyCode::Right) => self.set_focused_pane(FocusedPane::Details),
                 (_, KeyCode::Enter) => self.toggle_directory(repo)?,
                 (_, KeyCode::Char('c')) => self.start_commit(repo)?,
                 (_, KeyCode::Char('?')) => self.toggle_help(),
@@ -196,6 +198,10 @@ impl App {
 
     fn toggle_debug_mode(&mut self) {
         self.debug_mode = !self.debug_mode;
+    }
+
+    fn set_focused_pane(&mut self, pane: FocusedPane) {
+        self.focused_pane = pane;
     }
 }
 
