@@ -5,7 +5,7 @@ mod git_ops;
 mod ui;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -43,14 +43,21 @@ fn main() -> AppResult<()> {
         }
 
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.code == KeyCode::Char('q') && !app.is_modal_visible() {
+            if let Event::Key(KeyEvent {
+                code: KeyCode::Char('q'),
+                ..
+            }) = event::read()?
+            {
+                if !app.commit_modal.is_visible && !app.help_modal.is_visible {
                     break;
                 }
-                app.handle_key_event(key, &repo)?;
             }
+            app.handle_event(event::read()?, &repo)?;
         }
     }
+
+    // Disable mouse capture
+    execute!(io::stdout(), DisableMouseCapture)?;
 
     // Restore terminal
     disable_raw_mode()?;

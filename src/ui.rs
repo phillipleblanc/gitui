@@ -3,12 +3,15 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState,
+    },
     Frame,
 };
 use std::io::Stdout;
 
-use crate::app::App;
+use crate::app::{App, FocusedPane};
 
 pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
     let main_chunks = if app.debug_mode {
@@ -67,8 +70,19 @@ fn draw_file_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rect
             .collect()
     };
 
+    let block = Block::default()
+        .title("Files")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default().fg(if matches!(app.focused_pane, FocusedPane::FileList) {
+                Color::Cyan
+            } else {
+                Color::White
+            }),
+        );
+
     let file_list = List::new(items)
-        .block(Block::default().title("Files").borders(Borders::ALL))
+        .block(block)
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     f.render_stateful_widget(
@@ -79,10 +93,36 @@ fn draw_file_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rect
 }
 
 fn draw_right_pane(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rect) {
-    let right_pane = Paragraph::new(app.right_pane_content.as_str())
-        .block(Block::default().title("Details").borders(Borders::ALL))
-        .wrap(ratatui::widgets::Wrap { trim: true });
-    f.render_widget(right_pane, area);
+    let block = Block::default()
+        .title("Details")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default().fg(if matches!(app.focused_pane, FocusedPane::Details) {
+                Color::Cyan
+            } else {
+                Color::White
+            }),
+        );
+
+    let content = app.right_pane_content.as_str();
+    let paragraph = Paragraph::new(content)
+        .block(block)
+        .wrap(ratatui::widgets::Wrap { trim: true })
+        .scroll((app.details_scroll as u16, 0));
+
+    let mut scrollbar_state = ScrollbarState::default()
+        .content_length(content.lines().count() as u16)
+        .position(app.details_scroll as u16);
+
+    f.render_widget(paragraph, area);
+    f.render_stateful_widget(
+        Scrollbar::default()
+            .orientation(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None),
+        area,
+        &mut scrollbar_state,
+    );
 }
 
 fn draw_modal(
@@ -121,8 +161,19 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 fn draw_debug_pane(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rect) {
+    let block = Block::default()
+        .title("Debug")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default().fg(if matches!(app.focused_pane, FocusedPane::Debug) {
+                Color::Cyan
+            } else {
+                Color::White
+            }),
+        );
+
     let debug_pane = Paragraph::new(app.debug_content.as_str())
-        .block(Block::default().title("Debug").borders(Borders::ALL))
+        .block(block)
         .wrap(ratatui::widgets::Wrap { trim: true });
     f.render_widget(debug_pane, area);
 }

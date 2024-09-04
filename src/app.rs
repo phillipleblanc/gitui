@@ -1,6 +1,7 @@
 use crate::file_system::{get_file_list, FileEntry};
 use crate::git_ops::{create_commit, stage_all_modified, update_right_pane};
-use crossterm::event::KeyCode;
+use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent};
 use git2::Repository;
 use std::collections::HashMap;
 
@@ -21,6 +22,15 @@ pub struct App {
     pub help_modal: Modal,
     pub root_dir: String,
     pub debug_mode: bool,
+    pub focused_pane: FocusedPane,
+    pub details_scroll: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum FocusedPane {
+    FileList,
+    Details,
+    Debug,
 }
 
 impl App {
@@ -43,14 +53,35 @@ impl App {
             },
             root_dir,
             debug_mode: false,
+            focused_pane: FocusedPane::FileList,
+            details_scroll: 0,
         }
     }
 
-    pub fn handle_key_event(
-        &mut self,
-        key: crossterm::event::KeyEvent,
-        repo: &Repository,
-    ) -> AppResult<()> {
+    pub fn handle_event(&mut self, event: Event, repo: &Repository) -> AppResult<()> {
+        match event {
+            Event::Key(key) => self.handle_key_event(key, repo)?,
+            Event::Mouse(mouse) => self.handle_mouse_event(mouse)?,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_mouse_event(&mut self, mouse: MouseEvent) -> AppResult<()> {
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.focused_pane = match mouse.column {
+                    0..=30 => FocusedPane::FileList,
+                    31..=65 => FocusedPane::Details,
+                    _ => FocusedPane::Debug,
+                };
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    pub fn handle_key_event(&mut self, key: KeyEvent, repo: &Repository) -> AppResult<()> {
         if self.commit_modal.is_visible {
             match key.code {
                 KeyCode::Enter => self.perform_commit(repo)?,
@@ -62,22 +93,30 @@ impl App {
                 _ => {}
             }
         } else {
-            match key.code {
-                KeyCode::Up => self.move_selection_up(),
-                KeyCode::Down => self.move_selection_down(),
-                KeyCode::Enter => self.toggle_directory(repo)?,
-                KeyCode::Char('c') => self.start_commit(repo)?,
-                KeyCode::Char('?') => self.toggle_help(),
-                KeyCode::Char('d') => self.toggle_debug_mode(), // Add this line
-                KeyCode::Esc => self.close_modals(),
+            match (self.focused_pane, key.code) {
+                (FocusedPane::FileList, KeyCode::Up) => self.move_selection_up(),
+                (FocusedPane::FileList, KeyCode::Down) => self.move_selection_down(),
+                (FocusedPane::Details, KeyCode::Up) => self.scroll_details_up(),
+                (FocusedPane::Details, KeyCode::Down) => self.scroll_details_down(),
+                (_, KeyCode::Enter) => self.toggle_directory(repo)?,
+                (_, KeyCode::Char('c')) => self.start_commit(repo)?,
+                (_, KeyCode::Char('?')) => self.toggle_help(),
+                (_, KeyCode::Char('d')) => self.toggle_debug_mode(), // Add this line
+                (_, KeyCode::Esc) => self.close_modals(),
                 _ => {}
             }
         }
         Ok(())
     }
 
-    pub fn is_modal_visible(&self) -> bool {
-        self.commit_modal.is_visible || self.help_modal.is_visible
+    fn scroll_details_up(&mut self) {
+        if self.details_scroll > 0 {
+            self.details_scroll -= 1;
+        }
+    }
+
+    fn scroll_details_down(&mut self) {
+        self.details_scroll += 1;
     }
 
     fn move_selection_up(&mut self) {
