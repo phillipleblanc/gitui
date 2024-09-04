@@ -11,24 +11,39 @@ use std::io::Stdout;
 use crate::app::App;
 
 pub fn draw(f: &mut Frame<CrosstermBackend<Stdout>>, app: &mut App) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
-        .split(f.size());
+    let main_chunks = if app.debug_mode {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30),
+                Constraint::Percentage(35),
+                Constraint::Percentage(35),
+            ])
+            .split(f.size())
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .split(f.size())
+    };
 
-    draw_file_list(f, app, chunks[0]);
-    draw_right_pane(f, app, chunks[1]);
+    draw_file_list(f, app, main_chunks[0]);
+    draw_right_pane(f, app, main_chunks[1]);
+
+    if app.debug_mode {
+        draw_debug_pane(f, app, main_chunks[2]);
+    }
 
     if app.commit_modal.is_visible {
         draw_modal(f, "Commit Message", &app.commit_modal.content, 60, 20);
     } else if app.help_modal.is_visible {
-        draw_modal(f, "Help", &app.help_modal.content, 60, 40);
+        draw_modal(f, "Help", &app.help_modal.content, 60, 80);
     }
 }
 
 fn draw_file_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rect) {
     let items: Vec<ListItem> = if app.files.is_empty() {
-        vec![ListItem::new("(empty directory)")]
+        vec![ListItem::new("(no changes)")]
     } else {
         app.files
             .iter()
@@ -103,4 +118,11 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn draw_debug_pane(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rect) {
+    let debug_pane = Paragraph::new(app.debug_content.as_str())
+        .block(Block::default().title("Debug").borders(Borders::ALL))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(debug_pane, area);
 }

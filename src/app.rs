@@ -16,6 +16,7 @@ pub struct App {
     pub expanded_dirs: HashMap<String, bool>,
     pub selected_index: usize,
     pub right_pane_content: String,
+    pub debug_content: String, // Add this line
     pub commit_modal: Modal,
     pub help_modal: Modal,
     pub root_dir: String,
@@ -31,6 +32,7 @@ impl App {
             expanded_dirs: HashMap::new(),
             selected_index: 0,
             right_pane_content: String::new(),
+            debug_content: String::new(), // Add this line
             commit_modal: Modal {
                 content: String::new(),
                 is_visible: false,
@@ -40,7 +42,7 @@ impl App {
                 is_visible: false,
             },
             root_dir,
-            debug_mode: true, // Add this line
+            debug_mode: false,
         }
     }
 
@@ -148,22 +150,13 @@ impl App {
         Ok(())
     }
 
-    // Add this new method
     pub fn debug_log(&mut self, message: &str) {
-        if self.debug_mode {
-            self.right_pane_content.push_str(message);
-            self.right_pane_content.push_str("\n\n");
-        }
+        self.debug_content.push_str(message);
+        self.debug_content.push('\n');
     }
 
-    // Add this new method
     fn toggle_debug_mode(&mut self) {
         self.debug_mode = !self.debug_mode;
-        if self.debug_mode {
-            self.debug_log("Debug mode enabled");
-        } else {
-            self.right_pane_content.clear();
-        }
     }
 }
 
