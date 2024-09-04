@@ -12,7 +12,10 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 struct FileEntry {
     name: String,
@@ -175,33 +178,62 @@ fn main() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-fn update_right_pane(repo: &Repository, app: &mut App) -> Result<(), io::Error> {
+fn update_right_pane(repo: &Repository, app: &mut App) -> Result<(), git2::Error> {
     let selected_file = &app.files[app.selected_index];
     let path = PathBuf::from(&selected_file.name);
 
     if selected_file.is_dir {
         app.right_pane_content = format!("Directory: {}", selected_file.name);
-    } else if selected_file.status != Status::CURRENT {
-        // Show diff for modified files
-        let diff = repo
-            .diff_tree_to_workdir_with_index(None, None)
-            .expect("Failed to get diff");
-        let mut diff_content = String::new();
-        diff.print(git2::DiffFormat::Patch, |_, _, line| {
-            if line.origin() == '+' || line.origin() == '-' {
-                diff_content.push(line.origin());
-                diff_content.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
-            }
-            true
-        })
-        .expect("Failed to print diff");
-        app.right_pane_content = diff_content;
     } else {
-        // Show file contents for unmodified files
-        app.right_pane_content = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| format!("Failed to read file: {}", selected_file.name));
+        let mut diff_content = String::new();
+
+        // Check for unstaged changes
+        let mut opts = git2::DiffOptions::new();
+        opts.pathspec(selected_file.name.clone());
+        opts.include_untracked(true);
+
+        let diff = repo.diff_index_to_workdir(None, Some(&mut opts))?;
+        diff_content.push_str("Unstaged changes:\n");
+        append_diff(&mut diff_content, &diff, &path)?;
+
+        // Check for staged changes
+        let head = repo.head()?;
+        let tree = head.peel_to_tree()?;
+        let diff = repo.diff_tree_to_index(Some(&tree), None, Some(&mut opts))?;
+        diff_content.push_str("\nStaged changes:\n");
+        append_diff(&mut diff_content, &diff, &path)?;
+
+        app.right_pane_content = if diff_content.trim() == "Unstaged changes:\nStaged changes:" {
+            format!("No changes detected for file: {}", selected_file.name)
+        } else {
+            diff_content
+        };
     }
 
+    Ok(())
+}
+
+fn append_diff(content: &mut String, diff: &git2::Diff, path: &Path) -> Result<(), git2::Error> {
+    let mut has_changes = false;
+    diff.print(git2::DiffFormat::Patch, |delta, _, line| {
+        if delta.new_file().path() == Some(path) || delta.old_file().path() == Some(path) {
+            has_changes = true;
+            use git2::DiffLineType;
+            match line.origin_value() {
+                DiffLineType::Addition => content.push('+'),
+                DiffLineType::Deletion => content.push('-'),
+                DiffLineType::AddEOFNL => content.push_str("+\n"),
+                DiffLineType::DeleteEOFNL => content.push_str("-\n"),
+                DiffLineType::Context => content.push(' '),
+                _ => {}
+            }
+            content.push_str(std::str::from_utf8(line.content()).unwrap_or(""));
+        }
+        true
+    })?;
+    if !has_changes {
+        content.push_str("No changes\n");
+    }
     Ok(())
 }
 
@@ -270,7 +302,17 @@ fn get_file_list(repo: &Repository) -> Vec<FileEntry> {
 
 fn stage_all_modified(repo: &Repository) -> Result<(), git2::Error> {
     let mut index = repo.index()?;
-    index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true);
+    let statuses = repo.statuses(Some(&mut opts))?;
+
+    for entry in statuses.iter() {
+        let path = entry.path().unwrap_or_default();
+        if entry.status() != git2::Status::CURRENT {
+            index.add_path(Path::new(path))?;
+        }
+    }
+
     index.write()?;
     Ok(())
 }
