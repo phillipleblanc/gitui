@@ -8,7 +8,6 @@ pub struct FileEntry {
     pub name: String,
     pub status: Status,
     pub is_dir: bool,
-    pub depth: usize,
 }
 
 pub fn get_file_list(repo: &Repository) -> Vec<FileEntry> {
@@ -29,14 +28,12 @@ pub fn get_file_list(repo: &Repository) -> Vec<FileEntry> {
         let name = path.to_string_lossy().into_owned();
         let is_dir = path.is_dir();
         let status = entry.status();
-        let depth = path.components().count() - 1;
 
         if !file_set.contains(&name) {
             files.push(FileEntry {
                 name: name.clone(),
                 status,
                 is_dir,
-                depth,
             });
             file_set.insert(name.clone());
         }
