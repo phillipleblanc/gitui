@@ -1,4 +1,5 @@
 mod app;
+mod debug;
 mod file_system;
 mod git_ops;
 mod ui;
@@ -12,11 +13,15 @@ use git2::Repository;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use std::io;
+use std::time::Duration;
 
 use crate::app::{App, AppResult};
 use crate::ui::draw;
 
 fn main() -> AppResult<()> {
+    // Initialize debug channel
+    let debug_receiver = debug::init_debug();
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -32,11 +37,18 @@ fn main() -> AppResult<()> {
     loop {
         terminal.draw(|f| draw(f, &mut app))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.code == KeyCode::Char('q') && !app.is_modal_visible() {
-                break;
+        // Check for debug messages
+        if let Ok(debug_message) = debug_receiver.try_recv() {
+            app.debug_log(&debug_message);
+        }
+
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Char('q') && !app.is_modal_visible() {
+                    break;
+                }
+                app.handle_key_event(key, &repo)?;
             }
-            app.handle_key_event(key, &repo)?;
         }
     }
 

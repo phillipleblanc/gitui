@@ -10,7 +10,7 @@ cargo install gitui
 
 ## Features
 
-A terminal UI for git.
+A terminal UI for git. Boom!
 
 - Browse the commit history
 - View the file diff

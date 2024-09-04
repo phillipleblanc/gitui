@@ -1,5 +1,5 @@
 use crate::app::App;
-use git2::{Diff, DiffOptions, IndexAddOption, Repository, Status};
+use git2::{Diff, DiffOptions, Repository, Status};
 use std::path::{Path, PathBuf};
 
 pub fn update_right_pane(repo: &Repository, app: &mut App) -> Result<(), git2::Error> {

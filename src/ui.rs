@@ -41,8 +41,7 @@ fn draw_file_list(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rect
                     _ => Color::White,
                 };
                 let prefix = if file.is_dir { "📁 " } else { "📄 " };
-                let indent = "  ".repeat(file.depth);
-                let content = format!("{}{}{}", indent, prefix, file.name);
+                let content = format!("{}{}", prefix, file.name);
                 let style = if index == app.selected_index {
                     Style::default().fg(color).add_modifier(Modifier::REVERSED)
                 } else {

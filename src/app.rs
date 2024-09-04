@@ -19,12 +19,13 @@ pub struct App {
     pub commit_modal: Modal,
     pub help_modal: Modal,
     pub root_dir: String,
+    pub debug_mode: bool,
 }
 
 impl App {
     pub fn new(repo: &Repository) -> Self {
         let root_dir = repo.workdir().unwrap().to_str().unwrap().to_string();
-        let files = get_file_list(repo, &root_dir);
+        let files = get_file_list(repo);
         Self {
             files,
             expanded_dirs: HashMap::new(),
@@ -39,6 +40,7 @@ impl App {
                 is_visible: false,
             },
             root_dir,
+            debug_mode: true, // Add this line
         }
     }
 
@@ -64,6 +66,7 @@ impl App {
                 KeyCode::Enter => self.toggle_directory(repo)?,
                 KeyCode::Char('c') => self.start_commit(repo)?,
                 KeyCode::Char('?') => self.toggle_help(),
+                KeyCode::Char('d') => self.toggle_debug_mode(), // Add this line
                 KeyCode::Esc => self.close_modals(),
                 _ => {}
             }
@@ -96,7 +99,7 @@ impl App {
                 *is_expanded = !*is_expanded;
 
                 if *is_expanded {
-                    let new_files = get_file_list(repo, &full_path);
+                    let new_files = get_file_list(repo);
                     let insert_index = self.selected_index + 1;
                     for (i, file) in new_files.into_iter().enumerate() {
                         self.files.insert(insert_index + i, file);
@@ -139,9 +142,27 @@ impl App {
         create_commit(repo, &self.commit_modal.content)?;
         self.commit_modal.is_visible = false;
         self.commit_modal.content.clear();
-        self.files = get_file_list(repo, &self.root_dir);
+        self.files = get_file_list(repo);
         self.expanded_dirs.clear();
         Ok(())
+    }
+
+    // Add this new method
+    pub fn debug_log(&mut self, message: &str) {
+        if self.debug_mode {
+            self.right_pane_content.push_str(message);
+            self.right_pane_content.push_str("\n\n");
+        }
+    }
+
+    // Add this new method
+    fn toggle_debug_mode(&mut self) {
+        self.debug_mode = !self.debug_mode;
+        if self.debug_mode {
+            self.debug_log("Debug mode enabled");
+        } else {
+            self.right_pane_content.clear();
+        }
     }
 }
 
