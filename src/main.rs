@@ -30,6 +30,7 @@ struct App {
     selected_index: usize,
     right_pane_content: String,
     commit_modal: Modal,
+    help_modal: Modal,
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -49,6 +50,10 @@ fn main() -> Result<(), anyhow::Error> {
         right_pane_content: String::new(),
         commit_modal: Modal {
             content: String::new(),
+            is_visible: false,
+        },
+        help_modal: Modal {
+            content: get_help_content(),
             is_visible: false,
         },
     };
@@ -99,14 +104,9 @@ fn main() -> Result<(), anyhow::Error> {
             f.render_widget(right_pane, chunks[1]);
 
             if app.commit_modal.is_visible {
-                let modal_area = centered_rect(60, 20, f.size());
-                let modal = Paragraph::new(app.commit_modal.content.as_str()).block(
-                    Block::default()
-                        .title("Commit Message")
-                        .borders(Borders::ALL),
-                );
-                f.render_widget(Clear, modal_area);
-                f.render_widget(modal, modal_area);
+                render_modal(f, "Commit Message", &app.commit_modal.content, 60, 20);
+            } else if app.help_modal.is_visible {
+                render_modal(f, "Help", &app.help_modal.content, 60, 40);
             }
         })?;
 
@@ -125,6 +125,12 @@ fn main() -> Result<(), anyhow::Error> {
                         app.commit_modal.content.pop();
                     }
                     _ => {}
+                }
+            }
+        } else if app.help_modal.is_visible {
+            if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Esc || key.code == KeyCode::Char('?') {
+                    app.help_modal.is_visible = false;
                 }
             }
         } else {
@@ -147,6 +153,9 @@ fn main() -> Result<(), anyhow::Error> {
                     KeyCode::Char('c') => {
                         stage_all_modified(&repo)?;
                         app.commit_modal.is_visible = true;
+                    }
+                    KeyCode::Char('?') => {
+                        app.help_modal.is_visible = true;
                     }
                     _ => {}
                 }
@@ -301,4 +310,36 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn render_modal(
+    f: &mut ratatui::Frame<CrosstermBackend<std::io::Stdout>>,
+    title: &str,
+    content: &str,
+    percent_x: u16,
+    percent_y: u16,
+) {
+    let modal_area = centered_rect(percent_x, percent_y, f.size());
+    let modal = Paragraph::new(content)
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .wrap(ratatui::widgets::Wrap { trim: true });
+    f.render_widget(Clear, modal_area);
+    f.render_widget(modal, modal_area);
+}
+
+fn get_help_content() -> String {
+    "
+    Key Bindings:
+    ↑/↓: Navigate file list
+    Enter: View file details/diff
+    c: Stage all modified files and open commit dialog
+    ?: Toggle this help menu
+    q: Quit the application
+
+    In commit dialog:
+    Enter: Confirm commit
+    Esc: Cancel commit
+    "
+    .trim()
+    .to_string()
 }
