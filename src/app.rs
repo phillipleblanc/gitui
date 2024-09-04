@@ -1,6 +1,6 @@
 use crate::file_system::{get_file_list, FileEntry};
 use crate::git_ops::{create_commit, stage_all_modified, update_right_pane};
-use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::Event;
 use crossterm::event::{KeyCode, KeyEvent};
 use git2::Repository;
 use std::collections::HashMap;
@@ -20,7 +20,6 @@ pub struct App {
     pub debug_content: String,
     pub commit_modal: Modal,
     pub help_modal: Modal,
-    pub root_dir: String,
     pub debug_mode: bool,
     pub focused_pane: FocusedPane,
     pub details_scroll: usize,
@@ -30,12 +29,10 @@ pub struct App {
 pub enum FocusedPane {
     FileList,
     Details,
-    Debug,
 }
 
 impl App {
     pub fn new(repo: &Repository) -> Self {
-        let root_dir = repo.workdir().unwrap().to_str().unwrap().to_string();
         let files = get_file_list(repo);
         Self {
             files,
@@ -51,7 +48,6 @@ impl App {
                 content: get_help_content(),
                 is_visible: false,
             },
-            root_dir,
             debug_mode: false,
             focused_pane: FocusedPane::FileList,
             details_scroll: 0,
@@ -88,7 +84,7 @@ impl App {
                 (FocusedPane::Details, KeyCode::PageDown) => self.scroll_details_down(10),
                 (_, KeyCode::Left) => self.set_focused_pane(FocusedPane::FileList),
                 (_, KeyCode::Right) => self.set_focused_pane(FocusedPane::Details),
-                (_, KeyCode::Enter) => self.toggle_directory(repo)?,
+                (_, KeyCode::Enter) => self.show_details(repo)?,
                 (_, KeyCode::Char('c')) => self.start_commit(repo)?,
                 (_, KeyCode::Char('?')) => self.toggle_help(),
                 (_, KeyCode::Char('d')) => self.toggle_debug_mode(), // Add this line
@@ -101,57 +97,57 @@ impl App {
 
     fn scroll_details_up(&mut self, step: usize) {
         if self.details_scroll > 0 {
-            self.details_scroll -= step;
+            // Check that this won't overflow
+            if self.details_scroll >= step {
+                self.details_scroll -= step;
+            } else {
+                self.details_scroll = 0;
+            }
         }
     }
 
     fn scroll_details_down(&mut self, step: usize) {
-        self.details_scroll += step;
+        // Check that this won't overflow
+        if self.details_scroll + step < self.right_pane_content.lines().count() {
+            self.details_scroll += step;
+        } else {
+            self.details_scroll = self.right_pane_content.lines().count() - 1;
+        }
     }
 
     fn move_selection_up(&mut self, step: usize) {
         if !self.files.is_empty() && self.selected_index > 0 {
-            self.selected_index -= step;
+            // Check that this won't overflow
+            if self.selected_index >= step {
+                self.selected_index -= step;
+            } else {
+                self.selected_index = 0;
+            }
         }
     }
 
     fn move_selection_down(&mut self, step: usize) {
         if !self.files.is_empty() && self.selected_index < self.files.len() - 1 {
-            self.selected_index += step;
+            // Check that this won't overflow
+            if self.selected_index + step < self.files.len() {
+                self.selected_index += step;
+            } else {
+                self.selected_index = self.files.len() - 1;
+            }
         }
     }
 
-    fn toggle_directory(&mut self, repo: &Repository) -> AppResult<()> {
+    fn show_details(&mut self, repo: &Repository) -> AppResult<()> {
         if !self.files.is_empty() {
+            if self.selected_index >= self.files.len() {
+                self.selected_index = self.files.len() - 1;
+            }
             let selected_file = &self.files[self.selected_index];
-            if selected_file.is_dir {
-                let full_path = format!("{}/{}", self.root_dir, selected_file.name);
-                let is_expanded = self.expanded_dirs.entry(full_path.clone()).or_insert(false);
-                *is_expanded = !*is_expanded;
-
-                if *is_expanded {
-                    let new_files = get_file_list(repo);
-                    let insert_index = self.selected_index + 1;
-                    for (i, file) in new_files.into_iter().enumerate() {
-                        self.files.insert(insert_index + i, file);
-                    }
-                } else {
-                    self.collapse_directory(self.selected_index);
-                }
-            } else {
+            if !selected_file.is_dir {
                 update_right_pane(repo, self)?;
             }
         }
         Ok(())
-    }
-
-    fn collapse_directory(&mut self, start_index: usize) {
-        let mut end_index = start_index + 1;
-        let start_depth = self.files[start_index].depth;
-        while end_index < self.files.len() && self.files[end_index].depth > start_depth {
-            end_index += 1;
-        }
-        self.files.drain(start_index + 1..end_index);
     }
 
     fn start_commit(&mut self, repo: &Repository) -> AppResult<()> {

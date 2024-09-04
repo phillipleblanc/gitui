@@ -164,13 +164,7 @@ fn draw_debug_pane(f: &mut Frame<CrosstermBackend<Stdout>>, app: &App, area: Rec
     let block = Block::default()
         .title("Debug")
         .borders(Borders::ALL)
-        .border_style(
-            Style::default().fg(if matches!(app.focused_pane, FocusedPane::Debug) {
-                Color::Cyan
-            } else {
-                Color::White
-            }),
-        );
+        .border_style(Style::default().fg(Color::White));
 
     let debug_pane = Paragraph::new(app.debug_content.as_str())
         .block(block)

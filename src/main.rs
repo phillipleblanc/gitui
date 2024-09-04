@@ -25,7 +25,7 @@ fn main() -> AppResult<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -60,9 +60,6 @@ fn main() -> AppResult<()> {
             }
         }
     }
-
-    // Disable mouse capture
-    execute!(io::stdout(), DisableMouseCapture)?;
 
     // Restore terminal
     disable_raw_mode()?;
