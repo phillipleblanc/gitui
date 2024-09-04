@@ -15,9 +15,6 @@ pub fn get_file_list(repo: &Repository, current_dir: &str) -> Vec<FileEntry> {
     let mut file_set = HashSet::new();
 
     let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true)
-        .recurse_untracked_dirs(true)
-        .include_ignored(false);
 
     let statuses = repo
         .statuses(Some(&mut opts))
@@ -45,15 +42,6 @@ pub fn get_file_list(repo: &Repository, current_dir: &str) -> Vec<FileEntry> {
         }
     }
 
-    // Add untracked files and directories
-    add_untracked_files(
-        repo,
-        Path::new(current_dir),
-        &mut files,
-        &mut file_set,
-        current_dir,
-    );
-
     files.sort_by(|a, b| {
         if a.is_dir == b.is_dir {
             a.name.cmp(&b.name)
@@ -63,44 +51,4 @@ pub fn get_file_list(repo: &Repository, current_dir: &str) -> Vec<FileEntry> {
     });
 
     files
-}
-
-fn add_untracked_files(
-    repo: &Repository,
-    dir: &Path,
-    files: &mut Vec<FileEntry>,
-    file_set: &mut HashSet<String>,
-    current_dir: &str,
-) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(file_name) = path.file_name() {
-                let name = file_name.to_string_lossy().into_owned();
-                if !file_set.contains(&name) {
-                    let is_dir = path.is_dir();
-                    let parent = path.parent().and_then(|p| p.to_str()).map(String::from);
-                    let status = repo.status_file(&path).unwrap_or(Status::WT_NEW);
-
-                    files.push(FileEntry {
-                        name: name.clone(),
-                        status,
-                        is_dir,
-                        parent,
-                        depth: current_dir.split('/').count(),
-                    });
-                    file_set.insert(name.clone());
-
-                    if is_dir {
-                        let subdir = if current_dir.is_empty() {
-                            name
-                        } else {
-                            format!("{}/{}", current_dir, name)
-                        };
-                        add_untracked_files(repo, &path, files, file_set, &subdir);
-                    }
-                }
-            }
-        }
-    }
 }
